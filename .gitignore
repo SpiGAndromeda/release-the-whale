@@ -1,0 +1,8 @@
+# macOS files
+.DS_Store
+
+# PHPStorm files
+/.idea
+
+# NGINX logs
+/docker/symfony-demo-development/web/logs

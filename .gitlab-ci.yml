@@ -1,0 +1,94 @@
+variables:
+  TEST_IMAGE: $CI_REGISTRY_IMAGE:test-phpunit
+  APP_IMAGE_TAGGED: $CI_REGISTRY_IMAGE:app-$CI_COMMIT_SHA
+  WEB_IMAGE_TAGGED: $CI_REGISTRY_IMAGE:web-$CI_COMMIT_SHA
+  APP_IMAGE_LATEST: $CI_REGISTRY_IMAGE:app-latest
+  WEB_IMAGE_LATEST: $CI_REGISTRY_IMAGE:web-latest
+
+stages:
+  - build test
+  - test
+  - build
+
+build test image:
+  stage: build test
+  image: spigandromeda/docker-buildx:amd64
+  services:
+    - name: docker:18.09-dind
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+    - docker buildx create --use --name builder
+  script:
+    - >
+      docker buildx build
+      --file docker/symfony-demo-test/Dockerfile
+      --cache-from "type=registry,ref=$TEST_IMAGE-buildcache"
+      --cache-to "type=registry,ref=$TEST_IMAGE-buildcache,mode=max"
+      --tag "$TEST_IMAGE"
+      --load docker/symfony-demo-test
+    - docker push $TEST_IMAGE
+
+phpunit test:
+  stage: test
+  image: $CI_REGISTRY_IMAGE:test-phpunit
+  cache:
+    paths:
+      - .composer-cache/
+      - .node_modules-cache/
+  before_script:
+    - composer config -g cache-dir "$(pwd)/.composer-cache"
+    - cd symfony-demo
+    - cp ./.env.test ./.env
+    - composer install
+    - yarn config set cache-folder .node_modules-cache
+    - yarn install --frozen-lockfile
+    - yarn build
+  script:
+    - ./vendor/bin/simple-phpunit --configuration ./phpunit.xml.dist ./tests
+
+build app image:
+  stage: build
+  image: spigandromeda/docker-buildx:amd64
+  services:
+    - name: docker:18.09-dind
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+    - docker buildx create --use --name builder
+    - cp -R docker/symfony-demo-production symfony-demo/docker
+  script:
+    - >
+      docker buildx build
+      --file docker/symfony-demo-production/Dockerfile
+      --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE:buildcache"
+      --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE:buildcache,mode=max"
+      --target app
+      --tag "$APP_IMAGE_TAGGED"
+      --load symfony-demo
+    - docker tag $APP_IMAGE_TAGGED $APP_IMAGE_LATEST
+    - docker push $APP_IMAGE_TAGGED
+    - docker push $APP_IMAGE_LATEST
+
+build web image:
+  stage: build
+  image: spigandromeda/docker-buildx:amd64
+  services:
+    - name: docker:18.09-dind
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+    - docker buildx create --use --name builder
+    - cp -R docker/symfony-demo-production symfony-demo/docker
+  script:
+    - >
+      docker buildx build
+      --file docker/symfony-demo-production/Dockerfile
+      --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE:buildcache"
+      --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE:buildcache,mode=max"
+      --target web
+      --tag "$WEB_IMAGE_TAGGED"
+      --load symfony-demo
+    - docker tag $WEB_IMAGE_TAGGED $WEB_IMAGE_LATEST
+    - docker push $WEB_IMAGE_TAGGED
+    - docker push $WEB_IMAGE_LATEST

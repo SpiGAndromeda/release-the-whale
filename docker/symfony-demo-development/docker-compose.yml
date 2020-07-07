@@ -1,0 +1,20 @@
+version: "3"
+
+services:
+  web:
+    build: ./web
+    depends_on:
+      - app
+    ports:
+      - "1337:80"
+    volumes:
+      - ../../symfony-demo:/var/www/html/
+      - ./web/nginx.conf:/etc/nginx/nginx.conf
+      - ./web/sites/:/etc/nginx/sites-available
+      - ./web/conf.d/:/etc/nginx/conf.d
+      - ./web/logs:/var/log
+
+  app:
+    build: ./app
+    volumes:
+      - ../../symfony-demo:/var/www/html/
